@@ -1148,7 +1148,7 @@ class HDACodec:
     self.gpio_wake = 0
 
     total, nid = self.get_sub_nodes(AC_NODE_ROOT)
-    for i in range(total):
+    for _ in range(total):
       func = self.param_read(nid, PARAMS['FUNCTION_TYPE'])
       if (func & 0xff) == 0x01:		# audio group
         self.afg_function_id = func & 0xff
@@ -1167,7 +1167,7 @@ class HDACodec:
                                   VERBS['GET_SUBSYSTEM_ID'], 0)
 
     # parse only audio function group
-    if self.afg == None:
+    if self.afg is None:
       return
 
     pcm = self.param_read(self.afg, PARAMS['PCM'])
@@ -1192,12 +1192,12 @@ class HDACodec:
 
     nodes_count, nid = self.get_sub_nodes(self.afg)
     self.base_nid = nid
-    for i in range(nodes_count):
+    for _ in range(nodes_count):
       self.nodes[nid] = HDANode(self, nid)
       nid += 1
 
   def reread(self):
-    if not self.gpio is None:
+    if self.gpio is not None:
       self.gpio.reread()
     for node in self.nodes:
       self.nodes[node].reread()
@@ -1205,19 +1205,11 @@ class HDACodec:
   def analyze_pcm_rates(self, pcm):
     rates = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200,
              96000, 176400, 192000, 384000]
-    res = []
-    for i in range(len(rates)):
-      if pcm & (1 << i):
-        res.append(rates[i])
-    return res
+    return [rates[i] for i in range(len(rates)) if pcm & (1 << i)]
 
   def analyze_pcm_bits(self, bit):
     bits = [8, 16, 20, 24, 32]
-    res = []
-    for i in range(len(bits)):
-      if bit & (1 << i):
-        res.append(bits[i])
-    return res
+    return [bits[i] for i in range(len(bits)) if bit & (1 << i)]
 
   def analyze_pcm_streams(self, stream):
     res = []
