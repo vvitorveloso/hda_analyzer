@@ -1754,7 +1754,7 @@ class HDA_Exporter_pyscript:
 
   def text(self, codec):
     text = ''
-    nids = self.new_verbs.keys()[:]
+    nids = list(self.new_verbs.keys())[:]
     for nid in nids:
       for verb in self.new_verbs[nid]:
         old = self.old_verbs[nid][verb]
