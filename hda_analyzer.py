@@ -61,7 +61,7 @@ def read_nodes2(card, codec):
       print("Codec %i/%i access problem (%s)" % repr(msg))
     return
   c.analyze()
-  if not card in CODEC_TREE:
+  if card not in CODEC_TREE:
     CODEC_TREE[card] = {}
     DIFF_TREE[card] = {}
   CODEC_TREE[card][c.device] = c
@@ -70,7 +70,7 @@ def read_nodes2(card, codec):
 def read_nodes3(card, codec, proc_file):
   c = HDACodecProc(card, codec, proc_file)
   c.analyze()
-  if not card in CODEC_TREE:
+  if card not in CODEC_TREE:
     CODEC_TREE[card] = {}
     DIFF_TREE[card] = {}
   CODEC_TREE[card][c.device] = c
@@ -89,11 +89,11 @@ def read_nodes(proc_files):
       if a[0].startswith('http://'):
         proc_file = gethttpfile(a[0])
       elif len(a[0]) == 40 and not os.path.exists(a[0]):
-        url = 'http://www.alsa-project.org/db/?f=' + a[0]
-        print('Downloading contents from %s' % url)
+        url = f'http://www.alsa-project.org/db/?f={a[0]}'
+        print(f'Downloading contents from {url}')
         proc_file = gethttpfile(url)
         if not proc_file:
-          print("HASH %s cannot be downloaded..." % a[0])
+          print(f"HASH {a[0]} cannot be downloaded...")
           continue
         else:
           print('  Success')
@@ -109,21 +109,16 @@ def read_nodes(proc_files):
       read_nodes3(card, idx, proc_file)
       idx += 1
     card += 1
-  cnt = 0
-  for c in CODEC_TREE:
-    if len(CODEC_TREE[c]) > 0:
-      cnt += 1
-  return cnt    
+  return sum(1 for c in CODEC_TREE if len(CODEC_TREE[c]) > 0)    
 
 def save_to_file(filename, txt, mode=None):
   try:
-    fp = open(filename, "w+")
-    fp.write(txt)
-    fp.close()
+    with open(filename, "w+") as fp:
+      fp.write(txt)
     if mode:
       os.chmod(filename, 0o755)
   except:
-    print("Unable to save text to '%s'" % filename)
+    print(f"Unable to save text to '{filename}'")
 
 (
     TITLE_COLUMN,
@@ -238,7 +233,7 @@ mailing list, too.
     else:
       self.codec.revert()
       self.__refresh()
-      msg = "Setting for codec %s/%s (%s) was reverted!" % (self.codec.card, self.codec.device, self.codec.name)
+      msg = f"Setting for codec {self.codec.card}/{self.codec.device} ({self.codec.name}) was reverted!"
       type = Gtk.MessageType.INFO
 
     self.simple_dialog(type, msg)
@@ -294,10 +289,17 @@ mailing list, too.
     r = dialog.run()
     dialog.destroy()
     if r == Gtk.ResponseType.YES:
-      sdialog = Gtk.FileChooserDialog('Save %s as...' % exporter.stitle(),
-                    self, Gtk.FileChooserAction.SAVE,
-                     (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-                      Gtk.STOCK_SAVE, Gtk.ResponseType.OK))
+      sdialog = Gtk.FileChooserDialog(
+          f'Save {exporter.stitle()} as...',
+          self,
+          Gtk.FileChooserAction.SAVE,
+          (
+              Gtk.STOCK_CANCEL,
+              Gtk.ResponseType.CANCEL,
+              Gtk.STOCK_SAVE,
+              Gtk.ResponseType.OK,
+          ),
+      )
       sdialog.set_default_response(Gtk.ResponseType.OK)
 
       filter = Gtk.FileFilter()
@@ -332,7 +334,7 @@ mailing list, too.
     node = self.node
     if not codec:
       txt = 'Show some card info here...'
-    elif codec and self.node < 0:
+    elif self.node < 0:
       txt = codec.dump(skip_nodes=True)
     else:
       n = codec.get_node(node)
@@ -361,10 +363,10 @@ mailing list, too.
   def load(self):
     codec = self.codec
     node = self.node
-    n = None    
+    n = None
     if not codec:
       txt = 'Show some card info here...'
-    elif codec and node < 0:
+    elif node < 0:
       txt = codec.dump(skip_nodes=True)
     else:
       n = codec.get_node(node)
@@ -373,18 +375,15 @@ mailing list, too.
       self.node_window.remove(child)
       child.destroy()
 
-    if not n:
-      if not codec:
-        for i in CODEC_TREE[self.card]:
-          card = CODEC_TREE[self.card][i].mcard
-          break
-        self.node_window.add(NodeGui(card=card))
-      elif codec:
-        self.node_window.add(NodeGui(codec=codec))
-      else:
-        return
-    else:
+    if n:
       self.node_window.add(NodeGui(node=n))
+    elif not codec:
+      for i in CODEC_TREE[self.card]:
+        card = CODEC_TREE[self.card][i].mcard
+        break
+      self.node_window.add(NodeGui(card=card))
+    else:
+      self.node_window.add(NodeGui(codec=codec))
     self.node_window.show_all()
 
   def _new_notebook_page(self, widget, label):
@@ -400,7 +399,7 @@ mailing list, too.
       GObject.TYPE_INT,
       GObject.TYPE_BOOLEAN
     )
-   
+
     treeview = Gtk.TreeView(model)
     selection = treeview.get_selection()
     selection.set_mode(Gtk.SelectionMode.BROWSE)
@@ -408,21 +407,35 @@ mailing list, too.
 
     for card in CODEC_TREE:
       iter = model.append(None)
-      model.set(iter,
-                  TITLE_COLUMN, 'card-%s' % card,
-                  CARD_COLUMN, card,
-                  CODEC_COLUMN, -1,
-                  NODE_COLUMN, -1,
-                  ITALIC_COLUMN, False)
+      model.set(
+          iter,
+          TITLE_COLUMN,
+          f'card-{card}',
+          CARD_COLUMN,
+          card,
+          CODEC_COLUMN,
+          -1,
+          NODE_COLUMN,
+          -1,
+          ITALIC_COLUMN,
+          False,
+      )
       for codec in CODEC_TREE[card]:
         citer = model.append(iter)
         codec = CODEC_TREE[card][codec]
-        model.set(citer,
-                    TITLE_COLUMN, 'codec-%s' % codec.device,
-                    CARD_COLUMN, card,
-                    CODEC_COLUMN, codec.device,
-                    NODE_COLUMN, -1,
-                    ITALIC_COLUMN, False)
+        model.set(
+            citer,
+            TITLE_COLUMN,
+            f'codec-{codec.device}',
+            CARD_COLUMN,
+            card,
+            CODEC_COLUMN,
+            codec.device,
+            NODE_COLUMN,
+            -1,
+            ITALIC_COLUMN,
+            False,
+        )
         for nid in codec.nodes:
           viter = model.append(citer)
           node = codec.get_node(nid)
@@ -433,17 +446,17 @@ mailing list, too.
                       NODE_COLUMN, nid,
                       ITALIC_COLUMN, False)
           nid += 1
-  
+
     cell = Gtk.CellRendererText()
     cell.set_property('style', Pango.Style.ITALIC)
-  
+
     column = Gtk.TreeViewColumn('Nodes', cell, text=TITLE_COLUMN,
                                 style_set=ITALIC_COLUMN)
-  
+
     treeview.append_column(column)
 
     selection.connect('changed', self.selection_changed_cb)
-    
+
     treeview.expand_all()
     return treeview
 
@@ -469,15 +482,15 @@ mailing list, too.
 
 def monitor():
   from time import sleep
-  print("Watching %s cards" % len(CODEC_TREE))
+  print(f"Watching {len(CODEC_TREE)} cards")
   dumps = {}
   while 1:
     ok = False
     for card in CODEC_TREE:
-      if not card in dumps:
+      if card not in dumps:
         dumps[card] = {}
       for codec in CODEC_TREE[card]:
-        if not codec in dumps[card]:
+        if codec not in dumps[card]:
           dumps[card][codec] = ''
         c = CODEC_TREE[card][codec]
         if c.hwaccess:

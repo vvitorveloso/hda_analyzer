@@ -28,24 +28,24 @@ def DecodeProcFile(proc_file):
   proc_file = fd.read(1024*1024)
   fd.close()
   if proc_file.find('Subsystem Id:') < 0:
-      p = None
+    p = None
+    try:
+      from gzip import GzipFile
+      from StringIO import StringIO
+      s = StringIO(proc_file)
+      gz = GzipFile(mode='r', fileobj=s)
+      p = gz.read(1024*1024)
+      gz.close()
+    except:
+      pass
+    if p is None:
       try:
-        from gzip import GzipFile
-        from StringIO import StringIO
-        s = StringIO(proc_file)
-        gz = GzipFile(mode='r', fileobj=s)
-        p = gz.read(1024*1024)
-        gz.close()
+        from bz2 import decompress
+        p = decompress(proc_file)
       except:
         pass
-      if p is None:
-        try:
-          from bz2 import decompress
-          p = decompress(proc_file)
-        except:
-          pass
-      if not p is None:
-        proc_file = p
+    if p is not None:
+      proc_file = p
   return proc_file
 
 def DecodeAlsaInfoFile(proc_file):
@@ -110,7 +110,7 @@ class HDABaseProc:
             rem = rem[1:]
             ok = True
       return rem.strip(), res.strip()
-    self.wrongfile('string decode %s' % repr(str))
+    self.wrongfile(f'string decode {repr(str)}')
 
   def decodeintw(self, str, prefix='', forcehex=False):
     if str.startswith(prefix):
@@ -133,14 +133,14 @@ class HDABaseProc:
             ok = True
       if res and forcehex:
         if not res.startswith('0x'):
-          res = '0x' + res
+          res = f'0x{res}'
       if res.startswith('0x'):
         return rem.strip(), int(res[2:], 16)
       return rem.strip(), int(res)
-    self.wrongfile('integer decode %s (%s)' % (repr(str), repr(prefix)))
+    self.wrongfile(f'integer decode {repr(str)} ({repr(prefix)})')
 
   def wrongfile(self, msg=''):
-    raise ValueError("wrong proc file format (%s)" % msg)
+    raise ValueError(f"wrong proc file format ({msg})")
 
 class HDApcmDevice:
 
@@ -163,12 +163,12 @@ class HDApcmControl:
 
   def dump_extra(self):
     str = '  Control: %sname="%s", index=%s, device=%s\n' % (self.iface and ("iface=\"%s\", " % self.iface) or "", self.name, self.index, self.device)
-    if not self.amp_chs is None:
+    if self.amp_chs is not None:
       str += '    ControlAmp: chs=%s, dir=%s, idx=%s, ofs=%s\n' % (self.amp_chs, self.amp_dir, self.amp_idx, self.amp_ofs)
     return str
 
   def amp_index_match(self, idx):
-    if not self.amp_chs is None:
+    if self.amp_chs is not None:
       count = (self.amp_chs & 1) + ((self.amp_chs >> 1) & 1)
       return idx >= self.amp_idx and idx < self.amp_idx + count
     else:
@@ -207,16 +207,14 @@ class ProcNode(HDABaseProc):
       return self.verbs[verb]
     elif verb == VERBS['GET_CONNECT_LIST']:
       f1 = self.connections[param]
-      f2 = 0
-      if param + 1 < len(self.connections):
-        f2 = self.connections[param+1]
+      f2 = self.connections[param+1] if param + 1 < len(self.connections) else 0
       return f1 | (f2 << 16)
     elif verb == VERBS['GET_AMP_GAIN_MUTE']:
       dir = param & (1<<15) and HDA_OUTPUT or HDA_INPUT
-      idx = param & (1<<13) and 1 or 0
+      idx = 1 if param & (1<<13) else 0
       val = param & 0x7f
       if val >= len(self.amp_vals[dir]):
-        print("AMP index out of range (%s >= %s)" % (val, len(self.amp_vals[dir])))
+        print(f"AMP index out of range ({val} >= {len(self.amp_vals[dir])})")
         while val >= len(self.amp_vals[dir]):
           self.amp_vals[dir].append([128, 128])
       return self.amp_vals[dir][val][idx]
@@ -293,8 +291,8 @@ class ProcNode(HDABaseProc):
       b = b.strip()
       if not b:
         return
-      if not b in bits:
-        self.wrongfile('unknown dig1 bit %s' % repr(b))
+      if b not in bits:
+        self.wrongfile(f'unknown dig1 bit {repr(b)}')
       if bits[b] >= 0:
         xbits |= 1 << bits[b]
     self.add_verb(VERBS['GET_DIGI_CONVERT_1'], xbits)
@@ -353,7 +351,7 @@ class ProcNode(HDABaseProc):
     line = line.strip()
     self.amp_vals[dir] = []
     while len(line):
-      if not line[0] == '[':
+      if line[0] != '[':
         self.wrongfile('amp vals [')
       pos = line.find(']')
       if pos <= 0:
@@ -384,7 +382,7 @@ class ProcNode(HDABaseProc):
       conn, val = self.decodeintw(conn)
       conns.append(val)
     if count != len(conns):
-      self.wrongfile('connections %s != %s' % (count, len(conns)))
+      self.wrongfile(f'connections {count} != {len(conns)}')
     self.connections = conns
     self.add_verb(VERBS['GET_CONNECT_SEL'], sel)
     return res
@@ -400,7 +398,7 @@ class ProcNode(HDABaseProc):
     # workaround for bad 0x08%x format string in hda_proc.c
     a = line.split(':')
     if line.startswith('0x08') and len(a[0]) != 10:
-      line = "0x" + line[4:]
+      line = f"0x{line[4:]}"
     line, tmp1 = self.decodeintw(line, '')
     self.add_param(PARAMS['PIN_CAP'], tmp1)
 
@@ -422,11 +420,11 @@ class ProcNode(HDABaseProc):
     if setting in POWER_STATES:
       setting = POWER_STATES.index(setting)
     else:
-      self.wrongfile('power setting %s' % setting)
+      self.wrongfile(f'power setting {setting}')
     if actual in POWER_STATES:
       actual = POWER_STATES.index(actual)
     else:
-      self.wrongfile('power actual %s' % actual)
+      self.wrongfile(f'power actual {actual}')
     self.add_verb(VERBS['GET_POWER_STATE'], (setting & 0x0f) | ((actual & 0x0f) << 4))
   
   def add_powerstates(self, line):
@@ -495,9 +493,7 @@ class HDACodecProc(HDACodec, HDABaseProc):
     def lookforint(idx, prefix):
       idx, res = lookfor(idx, prefix)
       if res:
-        if res.startswith('0x'):
-          return idx, int(res[2:], 16)
-        return idx, int(res)
+        return (idx, int(res[2:], 16)) if res.startswith('0x') else (idx, int(res))
 
     def decodeint(idx, prefix):
       str, res = self.decodeintw(lines[idx], prefix)
@@ -523,8 +519,8 @@ class HDACodecProc(HDACodec, HDABaseProc):
         res, stepsize = self.decodeintw(res, 'stepsize=')
         res, mute = self.decodeintw(res, 'mute=')
         return idx+1, \
-               (ofs & 0x7f) | ((nsteps & 0x7f) << 8) | \
-               ((stepsize & 0x7f) << 16) | ((mute & 1) << 31)
+                 (ofs & 0x7f) | ((nsteps & 0x7f) << 8) | \
+                 ((stepsize & 0x7f) << 16) | ((mute & 1) << 31)
       self.wrongfile('amp caps expected')
 
     def decodegpiocap(idx, prefix):
@@ -536,20 +532,20 @@ class HDACodecProc(HDACodec, HDABaseProc):
         res, unsol = self.decodeintw(res, 'unsolicited=')
         res, wake = self.decodeintw(res, 'wake=')
         return idx+1, \
-               (io & 0xff) | ((o & 0xff) << 8) | \
-               ((i & 0xff) << 16) | ((unsol & 1) << 30) | ((wake & 1) << 31)
+                 (io & 0xff) | ((o & 0xff) << 8) | \
+                 ((i & 0xff) << 16) | ((unsol & 1) << 30) | ((wake & 1) << 31)
       self.wrongfile('gpio caps expected')
 
     def decodegpio(idx, prefix):
-    
+
       def writeval(str, idx, var):
-        res, val = self.decodeintw(str, var + '=')
+        res, val = self.decodeintw(str, f'{var}=')
         if val:
           self.proc_gpio[var] |= 1 << idx
         else:
           self.proc_gpio[var] &= ~(1 << idx)
         return res
-    
+
       res = lines[idx]
       res, idx1 = self.decodeintw(res, prefix)
       if res.startswith(': '):
@@ -597,7 +593,7 @@ class HDACodecProc(HDACodec, HDABaseProc):
         self.proc_afg_function_id = function_id
     else:
       idx, self.proc_mfg = lookforint(idx, 'Modem Function Group: ')
-      if not self.proc_mfg is None:
+      if self.proc_mfg is not None:
         if self.proc_mfg_function_id == 0:
           self.proc_mfg_function_id = function_id
       else:
@@ -644,11 +640,11 @@ class HDACodecProc(HDACodec, HDABaseProc):
       return
     line = lines[idx].strip()
     if line == 'Invalid AFG subtree':
-      print("Invalid AFG subtree for codec %s?" % self.proc_codec_id)
+      print(f"Invalid AFG subtree for codec {self.proc_codec_id}?")
       return
     while line.startswith('Power-Map: ') or \
-          line.startswith('Analog Loopback: '):
-      print('Sigmatel specific "%s" verb ignored for the moment' % line)
+            line.startswith('Analog Loopback: '):
+      print(f'Sigmatel specific "{line}" verb ignored for the moment')
       idx += 1
       line = lines[idx].strip()
     node = None
@@ -672,25 +668,25 @@ class HDACodecProc(HDACodec, HDABaseProc):
         elif line.startswith('    ControlAmp: '):
           node.add_controlamp(line[16:])
         elif line.startswith('  Converter: '):
-          node.add_converter(line[13:]) 
+          node.add_converter(line[13:])
         elif line.startswith('  SDI-Select: '):
-          node.add_sdiselect(line[14:]) 
+          node.add_sdiselect(line[14:])
         elif line.startswith('  Digital:'):
-          node.add_digital(line[11:]) 
+          node.add_digital(line[11:])
         elif line.startswith('  Unsolicited:'):
-          node.add_unsolicited(line[15:]) 
+          node.add_unsolicited(line[15:])
         elif line.startswith('  Digital category:'):
-          node.add_digitalcategory(line[20:]) 
+          node.add_digitalcategory(line[20:])
         elif line.startswith('  IEC Coding Type: '):
           pass
         elif line.startswith('  Amp-In caps: '):
-          node.add_ampcaps(line[15:], HDA_INPUT) 
+          node.add_ampcaps(line[15:], HDA_INPUT)
         elif line.startswith('  Amp-Out caps: '):
-          node.add_ampcaps(line[16:], HDA_OUTPUT) 
+          node.add_ampcaps(line[16:], HDA_OUTPUT)
         elif line.startswith('  Amp-In vals: '):
-          node.add_ampvals(line[15:], HDA_INPUT) 
+          node.add_ampvals(line[15:], HDA_INPUT)
         elif line.startswith('  Amp-Out vals: '):
-          node.add_ampvals(line[17:], HDA_OUTPUT) 
+          node.add_ampvals(line[17:], HDA_OUTPUT)
         elif line.startswith('  Connection: '):
           if idx + 1 < len(lines):
             idx += node.add_connection(line[13:], lines[idx+1])
@@ -731,7 +727,6 @@ class HDACodecProc(HDACodec, HDABaseProc):
           node.add_volknob(line[15:])
         elif line.startswith('  In-driver Connection: '):
           idx += 1
-          pass
         elif line.startswith('  Devices: '):
           pass
         elif line.startswith('     Dev '):
@@ -779,10 +774,8 @@ class HDACodecProc(HDACodec, HDABaseProc):
 
   def get_sub_nodes(self, nid):
     if nid == AC_NODE_ROOT:
-      if self.proc_mfg >= 0 and self.proc_afg >= 0:
-        return 2, self.proc_afg
       if self.proc_mfg >= 0:
-        return 1, self.proc_mfg
+        return (2, self.proc_afg) if self.proc_afg >= 0 else (1, self.proc_mfg)
       return 1, self.proc_afg
     elif nid == self.proc_afg:
       if self.proc_nids:
@@ -802,7 +795,7 @@ class HDACodecProc(HDACodec, HDABaseProc):
   def rw(self, nid, verb, param):
     if nid == self.proc_afg:
       for i, j in GPIO_IDS.iteritems():
-        if verb == j[0] or verb == j[1]:
+        if verb in [j[0], j[1]]:
           if i == 'direction':
             i = 'dir'
           return self.proc_gpio[i]
@@ -816,19 +809,19 @@ class HDACodecProc(HDACodec, HDABaseProc):
     raise ValueError( "unimplemented rw(0x%x, 0x%x, 0x%x)" % (nid, verb, param))
 
   def dump_node_extra(self, node):
-    if not node or not node.nid in self.proc_nids:
+    if not node or node.nid not in self.proc_nids:
       return ''
     node = self.proc_nids[node.nid]
     return node.dump_extra()
 
   def get_device(self, nid):
-    if not nid in self.proc_nids:
+    if nid not in self.proc_nids:
       return None
     node = self.proc_nids[nid]
     return node.get_device()
 
   def get_controls(self, nid):
-    if not nid in self.proc_nids:
+    if nid not in self.proc_nids:
       return None
     node = self.proc_nids[nid]
     return node.get_controls()
@@ -840,7 +833,7 @@ class HDACodecProc(HDACodec, HDABaseProc):
 def dotest1(base):
   l = listdir(base)
   for f in l:
-    file = base + '/' + f
+    file = f'{base}/{f}'
     if os.path.isdir(file):
       dotest1(file)
     else:

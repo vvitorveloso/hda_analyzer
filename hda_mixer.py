@@ -36,10 +36,7 @@ CTL_ELEM_TYPEs = {
   'iec958':CTL_ELEM_TYPE_IEC958,
   'integer64':CTL_ELEM_TYPE_INTEGER64
 }
-CTL_ELEM_RTYPEs = {}
-for i in CTL_ELEM_TYPEs:
-  CTL_ELEM_RTYPEs[CTL_ELEM_TYPEs[i]] = i
-
+CTL_ELEM_RTYPEs = {CTL_ELEM_TYPEs[i]: i for i in CTL_ELEM_TYPEs}
 CTL_ELEM_IFACE_CARD = 0
 CTL_ELEM_IFACE_MIXER = 2
 CTL_ELEM_IFACE_PCM = 3
@@ -48,10 +45,7 @@ CTL_ELEM_IFACEs = {
   "mixer": 2,
   "pcm": 3
 }
-CTL_ELEM_RIFACEs = {}
-for i in CTL_ELEM_IFACEs:
-  CTL_ELEM_RIFACEs[CTL_ELEM_IFACEs[i]] = i
-
+CTL_ELEM_RIFACEs = {CTL_ELEM_IFACEs[i]: i for i in CTL_ELEM_IFACEs}
 CTL_ELEM_ACCESS_READ = (1<<0)
 CTL_ELEM_ACCESS_WRITE = (1<<1)
 CTL_ELEM_ACCESS_VOLATILE = (1<<2)
@@ -111,9 +105,7 @@ class AlsaMixerElemId:
     self.name = self.name.replace(b'\x00', b'').decode('ascii')
 
   def get_text_info(self):
-    return 'iface="%s",name="%s",index=%s,device=%s,subdevice=%s' % \
-      (CTL_ELEM_RIFACEs[self.iface], self.name, self.index,
-      self.device, self.subdevice)
+    return f'iface="{CTL_ELEM_RIFACEs[self.iface]}",name="{self.name}",index={self.index},device={self.device},subdevice={self.subdevice}'
 
 class AlsaMixerElem:
 
@@ -139,10 +131,7 @@ class AlsaMixerElem:
     res = ioctl(self.mixer.fd, CTL_IOCTL_ELEM_INFO, bin)
     self.id.unpack(res[:self.id.binsize])
     a = struct.unpack('iIIi128s8s64s', res[self.id.binsize:])
-    b = {}
-    b['id'] = self.id
-    b['type'] = a[0]
-    b['access'] = []
+    b = {'id': self.id, 'type': a[0], 'access': []}
     for i in CTL_ELEM_ACCESSs:
       if CTL_ELEM_ACCESSs[i] & a[1]:
         b['access'].append(i)
@@ -150,13 +139,13 @@ class AlsaMixerElem:
     b['owner'] = a[3]
     if b['type'] == CTL_ELEM_TYPE_INTEGER:
       b['min'], b['max'], b['step'] = \
-                      struct.unpack("lll", a[4][:LONGSIZE*3])
+                        struct.unpack("lll", a[4][:LONGSIZE*3])
     elif b['type'] == CTL_ELEM_TYPE_INTEGER64:
       b['min'], b['max'], b['step'] = \
-                      struct.unpack("qqq", a[4][:LONGLONGSIZE*3])
+                        struct.unpack("qqq", a[4][:LONGLONGSIZE*3])
     elif b['type'] == CTL_ELEM_TYPE_ENUMERATED:
       b['items'], b['item'], b['name'] = \
-                      struct.unpack("II64s", a[4][:UINTSIZE*2+64])
+                        struct.unpack("II64s", a[4][:UINTSIZE*2+64])
     b['dimen'] = struct.unpack("HHHH", a[5])
     return b
 
@@ -178,7 +167,7 @@ class AlsaMixerElem:
     elif self.type == CTL_ELEM_TYPE_BYTES:
       return res[startoff:startoff+self.count]
     else:
-      raise ValueError("Unsupported type %s" % CTL_ELEM_RTYPEs[self.type])
+      raise ValueError(f"Unsupported type {CTL_ELEM_RTYPEs[self.type]}")
 
   def get_text_info(self, idx=None):
     res = self.id.get_text_info() + '\n'
@@ -195,12 +184,12 @@ class AlsaMixer:
   def __init__(self, card, ctl_fd=None):
     self.card = card
     if ctl_fd is None:
-      self.fd = os.open("/dev/snd/controlC%s" % card, os.O_RDONLY)
+      self.fd = os.open(f"/dev/snd/controlC{card}", os.O_RDONLY)
     else:
       self.fd = os.dup(ctl_fd)
 
   def __del__(self):
-    if not self.fd is None:
+    if self.fd is not None:
       os.close(self.fd)
 
 if __name__ == '__main__':
