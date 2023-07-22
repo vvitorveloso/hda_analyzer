@@ -19,9 +19,7 @@ from hda_mixer import AlsaMixer, AlsaMixerElem, AlsaMixerElemId
 
 def __ioctl_val(val):
   # workaround for OverFlow bug in python 2.4
-  if val & 0x80000000:
-    return -((val^0xffffffff)+1)
-  return val
+  return -((val^0xffffffff)+1) if val & 0x80000000 else val
 
 IOCTL_INFO = __ioctl_val(0x80dc4801)
 IOCTL_PVERSION = __ioctl_val(0x80044810)
@@ -246,7 +244,7 @@ class HDAAmpCaps:
   def reread(self):
     caps = self.codec.param_read(self.nid,
           PARAMS[self.dir == HDA_OUTPUT and 'AMP_OUT_CAP' or 'AMP_IN_CAP'])
-    if caps == ~0 or caps == 0:
+    if caps in [~0, 0]:
       if self.dir == HDA_INPUT:
         ccaps = self.codec.amp_caps_in
       else:
@@ -286,20 +284,17 @@ class HDAAmpCaps:
   def get_val_perc(self, val):
     if self.ofs is None:
       return None
-    if self.nsteps == 0:
-      return 0
-    return (val * 100) / self.nsteps
+    return 0 if self.nsteps == 0 else (val * 100) / self.nsteps
 
   def get_val_str(self, val):
     if self.ofs is None:
       return "0x%02x" % val
-    else:
-      db = self.get_val_db(val & 0x7f)
-      res = val & 0x80 and "{mute-" or "{"
-      res += "0x%02x" % (val & 0x7f)
-      res += ":%02i.%idB" % (db / 100, db % 100)
-      res += ":%i%%}" % (self.get_val_perc(val & 0x7f))
-      return res
+    db = self.get_val_db(val & 0x7f)
+    res = "{mute-" if val & 0x80 else "{"
+    res += "0x%02x" % (val & 0x7f)
+    res += ":%02i.%idB" % (db / 100, db % 100)
+    res += ":%i%%}" % (self.get_val_perc(val & 0x7f))
+    return res
 
 class HDAAmpVal:
 
@@ -307,7 +302,7 @@ class HDAAmpVal:
     self.codec = codec
     self.node = node
     self.dir = dir
-    if caps.ofs == None:
+    if caps.ofs is None:
       self.caps = dir == HDA_INPUT and codec.amp_caps_in or codec.amp_caps_out
     else:
       self.caps = caps
@@ -363,7 +358,7 @@ class HDAAmpVal:
         self.vals.append(val)
       val = self.codec.rw(self.nid, verb, (0 << 13) | dir | i)
       self.vals.append(val)
-    if self.origin_vals == None:
+    if self.origin_vals is None:
       self.origin_vals = self.vals[:]
 
   def revert(self):
@@ -389,10 +384,7 @@ class HDAAmpVal:
     vals = self.get_val(idx)
     if type(vals) != type([]):
       vals = [vals]
-    res = []
-    for val in vals:
-      res.append(self.caps.get_val_db(val))
-    return res
+    return [self.caps.get_val_db(val) for val in vals]
 
   def get_val_str(self, idx):
 
@@ -400,7 +392,7 @@ class HDAAmpVal:
       return self.caps.get_val_str(val)
 
     if self.stereo:
-      return '[' + niceval(self.vals[idx*2]) + ' ' + niceval(self.vals[idx*2+1]) + ']'
+      return f'[{niceval(self.vals[idx * 2])} {niceval(self.vals[idx * 2 + 1])}]'
     return niceval(self.vals[idx])
 
 class HDARootNode:
@@ -467,9 +459,7 @@ class HDANode:
     
   def wtype_name(self):
     name = WIDGET_TYPE_NAMES[self.wtype]
-    if not name:
-      return "UNKNOWN Widget 0x%x" % self.wtype
-    return name
+    return "UNKNOWN Widget 0x%x" % self.wtype if not name else name
     
   def wcap_name(self, id):
     return WIDGET_CAP_NAMES[id]
@@ -505,7 +495,7 @@ class HDANode:
       self.pwr_actual_name = self.pwr_actual < 4 and POWER_STATES[self.pwr_actual] or "UNKNOWN"
     
   def reread(self):
-  
+
     def get_jack_location(cfg):
       bases = ["N/A", "Rear", "Front", "Left", "Right", "Top", "Bottom"]
       specials = {0x07: "Rear Panel", 0x08: "Drive Bar",
@@ -514,31 +504,29 @@ class HDANode:
       cfg = (cfg >> 24) & 0x3f
       if cfg & 0x0f < 7:
         return bases[cfg & 0x0f]
-      if cfg in specials:
-        return specials[cfg]
-      return "UNKNOWN"
-      
+      return specials[cfg] if cfg in specials else "UNKNOWN"
+
     def get_jack_connector(cfg):
       names = ["Unknown", "1/8", "1/4", "ATAPI", "RCA", "Optical",
                "Digital", "Analog", "DIN", "XLR", "RJ11", "Comb",
                None, None, None, "Other"]
       cfg = (cfg >> 16) & 0x0f
       return names[cfg] and names[cfg] or "UNKNOWN"
-      
+
     def get_jack_color(cfg):
       names = ["Unknown", "Black", "Grey", "Blue", "Green", "Red", "Orange",
                "Yellow", "Purple", "Pink", None, None, None, None, "White",
                "Other"]
       cfg = (cfg >> 12) & 0x0f
       return names[cfg] and names[cfg] or "UNKNOWN"
-  
+
     self.connections = None
     self.active_connection = None
     if self.conn_list:
       self.connections = self.codec.get_connections(self.nid)
-      if not self.wtype_id in ['AUD_MIX', 'VOL_KNB', 'POWER']:
+      if self.wtype_id not in ['AUD_MIX', 'VOL_KNB', 'POWER']:
         self.active_connection = self.codec.rw(self.nid, VERBS['GET_CONNECT_SEL'], 0)
-        if self.origin_active_connection == None:
+        if self.origin_active_connection is None:
           self.origin_active_connection = self.active_connection
     if self.in_amp:
       self.amp_caps_in = HDAAmpCaps(self.codec, self.nid, HDA_INPUT)
@@ -632,7 +620,7 @@ class HDANode:
   def reread_eapdbtl(self, value=None):
     self.pincap_eapdbtl = []
     self.pincap_eapdbtls = 0
-    if not 'EAPD' in self.pincap:
+    if 'EAPD' not in self.pincap:
       return
     if value is None:
       val = self.codec.rw(self.nid, VERBS['GET_EAPD_BTLENABLE'], 0)
@@ -774,12 +762,12 @@ class HDANode:
     return changed
 
   def revert(self, export=False):
-    if not self.origin_active_connection is None:
+    if self.origin_active_connection is not None:
       self.set_active_connection(self.origin_active_connection)
-    if not self.origin_pwr is None:
+    if self.origin_pwr is not None:
       self.codec.rw(self.nid, VERBS['SET_POWER_STATE'], self.origin_pwr)
       self.reread_pwr(self.origin_pwr)
-    if not self.origin_pinctls is None:
+    if self.origin_pinctls is not None:
       self.codec.rw(self.nid, VERBS['SET_PIN_WIDGET_CONTROL'], self.origin_pinctls)
       self.reread_pin_widget_control(self.origin_pinctls)
     if not export:
@@ -787,16 +775,16 @@ class HDANode:
         self.amp_vals_in.revert()
       if self.out_amp:
         self.amp_vals_out.revert()
-    if not self.origin_pincap_eapdbtls is None:
+    if self.origin_pincap_eapdbtls is not None:
       self.codec.rw(self.nid, VERBS['SET_EAPD_BTLENABLE'], self.origin_pincap_eapdbtls)
       self.reread_eapdbtl(self.origin_pincap_eapdbtls)
-    if not self.origin_vol_knb is None:
+    if self.origin_vol_knb is not None:
       self.codec.rw(self.nid, VERBS['SET_VOLUME_KNOB_CONTROL'], self.origin_vol_knb)
       self.set_vol_knb(self.origin_vol_knb)
-    if not self.origin_sdi_select is None:
+    if self.origin_sdi_select is not None:
       self.codec.rw(self.nid, VERBS['SET_SDI_SELECT'], self.origin_sdi_select)
       self.reread_sdi_select(self.origin_sdi_select)
-    if not self.origin_digi1 is None:
+    if self.origin_digi1 is not None:
       self.codec.rw(self.nid, VERBS['SET_DIGI_CONVERT_1'], self.origin_digi1 & 0xff)
       self.codec.rw(self.nid, VERBS['SET_DIGI_CONVERT_2'], (self.origin_digi1 >> 8) & 0xff)
       self.reread_dig1(self.origin_digi1)
@@ -804,10 +792,8 @@ class HDANode:
   def export(self):
     
     def getit(cur, orig):
-      if orig is None:
-        return None
-      return getattr(self, cur)
-  
+      return None if orig is None else getattr(self, cur)
+
     self.disable_reread = True
     active_connection = getit('active_connection', self.origin_active_connection)
     pwr = getit('pwr', self.origin_pwr)
@@ -819,31 +805,31 @@ class HDANode:
     self.codec.export_start(True)
     self.revert(export=True)
     self.codec.export_end()
-    if not self.origin_active_connection is None:
+    if self.origin_active_connection is not None:
       self.set_active_connection(active_connection)
-    if not self.origin_pwr is None:
+    if self.origin_pwr is not None:
       self.codec.rw(self.nid, VERBS['SET_POWER_STATE'], pwr)
       self.reread_pwr(pwr)
-    if not self.origin_pinctls is None:
+    if self.origin_pinctls is not None:
       self.codec.rw(self.nid, VERBS['SET_PIN_WIDGET_CONTROL'], pinctls)
       self.reread_pin_widget_control(pinctls)
     if self.in_amp:
       self.amp_vals_in.export()
     if self.out_amp:
       self.amp_vals_out.export()
-    if not self.origin_pincap_eapdbtls is None:
+    if self.origin_pincap_eapdbtls is not None:
       self.codec.rw(self.nid, VERBS['SET_EAPD_BTLENABLE'], pincap_eapdbtls)
       self.reread_eapdbtl(pincap_eapdbtls)
-    if not self.origin_vol_knb is None:
+    if self.origin_vol_knb is not None:
       self.codec.rw(self.nid, VERBS['SET_VOLUME_KNOB_CONTROL'], vol_knb)
       self.set_vol_knb(vol_knb)
-    if not self.origin_sdi_select is None:
+    if self.origin_sdi_select is not None:
       self.codec.rw(self.nid, VERBS['SET_SDI_SELECT'], sdi_select)
       self.reread_sdi_select(sdi_select)
-    if not self.origin_digi1 is None:
+    if self.origin_digi1 is not None:
       self.codec.rw(self.nid, VERBS['SET_DIGI_CONVERT_1'], digi1 & 0xff)
       self.codec.rw(self.nid, VERBS['SET_DIGI_CONVERT_2'], (digi1 >> 8) & 0xff)
-      self.reread_dig1(digi1)    
+      self.reread_dig1(digi1)
     self.disable_reread = False
 
   def get_device(self):
@@ -884,7 +870,7 @@ class HDANode:
     if dst_node.in_amp:
       idx = 0
       if dst_node.amp_vals_in.indices == dst_node.connections:
-        if not self.nid in dst_node.connections:
+        if self.nid not in dst_node.connections:
           raise ValueError("nid 0x%02x is not connected to nid 0x%02x (%s, %s)" % (dst_node.nid, self.nid, repr(self.connections), repr(dst_node.connections)))
         idx = dst_node.connections.index(self.nid)
       res.append(dst_node.amp_vals_in.get_val_str(idx))
@@ -894,9 +880,9 @@ class HDANode:
 
   def is_conn_active(self, dst_node):
     # disabled route for PIN widgets
-    if self.wtype_id == 'PIN' and not 'IN' in self.pinctl:
+    if self.wtype_id == 'PIN' and 'IN' not in self.pinctl:
       return None
-    if dst_node.wtype_id == 'PIN' and not 'OUT' in dst_node.pinctl:
+    if dst_node.wtype_id == 'PIN' and 'OUT' not in dst_node.pinctl:
       return None
     res = [None, None]
     if self.out_amp:
@@ -909,7 +895,7 @@ class HDANode:
     if dst_node.in_amp:
       idx = 0
       if dst_node.amp_vals_in.indices == dst_node.connections:
-        if not self.nid in dst_node.connections:
+        if self.nid not in dst_node.connections:
           raise ValueError("nid 0x%02x is not connected to nid 0x%02x (%s, %s)" % (dst_node.nid, self.nid, repr(self.connections), repr(dst_node.connections)))
         idx = dst_node.connections.index(self.nid)
       vals = dst_node.amp_vals_in.get_val_db(idx)
@@ -920,11 +906,8 @@ class HDANode:
           res[idx] = vals[idx]
     if res[0] is None and res[1] is None:
       return True
-    limit = self.wtype_id == 'AUD_OUT' and -3200 or -1200
-    for r in res:
-      if r >= limit:
-        return True
-    return False
+    limit = -3200 if self.wtype_id == 'AUD_OUT' else -1200
+    return any(r >= limit for r in res)
 
 class HDAGPIO:
 
@@ -939,7 +922,7 @@ class HDAGPIO:
     self.val = {}
     for i in GPIO_IDS:
      self.val[i] = self.codec.rw(self.nid, GPIO_IDS[i][0], 0)
-    if self.originval == None:
+    if self.originval is None:
       self.originval = self.val.copy()
 
   def test(self, name, bit):
@@ -998,7 +981,7 @@ class HDACard:
     self.components = a[8].replace(b'\x00', b'').decode('ascii')
 
   def __del__(self):
-    if not self.fd is None:
+    if self.fd is not None:
       os.close(self.fd)
 
 class HDACodec:
@@ -1015,17 +998,16 @@ class HDACodec:
     ctl_fd = None
     self.exporter = None
     self.exporta = []
+    self.device = device
     if type(1) == type(card):
-      self.device = device
       self.card = card
       self.mcard = HDACard(card)
       ctl_fd = self.mcard.fd
     else:
-      self.device = device
       self.mcard = card
       self.card = card.card
     if not clonefd:
-      self.fd = os.open("/dev/snd/hwC%sD%s" % (card, device), os.O_RDWR)
+      self.fd = os.open(f"/dev/snd/hwC{card}D{device}", os.O_RDWR)
     else:
       self.fd = os.dup(clonefd)
     info = struct.pack('Ii64s80si64s', 0, 0, b'', b'', 0, b'')
@@ -1041,17 +1023,16 @@ class HDACodec:
     self.parse_proc()
 
   def __del__(self):
-    if not self.fd is None:
+    if self.fd is not None:
       os.close(self.fd)
 
   def rw(self, nid, verb, param):
     """do elementary read/write operation"""
-    if not self.exporter:
-      verb = (nid << 24) | (verb << 8) | param
-      res = ioctl(self.fd, IOCTL_VERB_WRITE, struct.pack('II', verb, 0))
-      return struct.unpack('II', res)[1]
-    else:
+    if self.exporter:
       return self.exporter.rw(self.exporta and self.exporta[-1] or False, nid, verb, param)
+    verb = (nid << 24) | (verb << 8) | param
+    res = ioctl(self.fd, IOCTL_VERB_WRITE, struct.pack('II', verb, 0))
+    return struct.unpack('II', res)[1]
     
   def get_wcap(self, nid):
     """get cached widget capabilities"""
@@ -1108,7 +1089,7 @@ class HDACodec:
     return res
 
   def revert(self):
-    if not self.gpio is None:
+    if self.gpio is not None:
       self.gpio.revert()
     for nid in self.nodes:
       self.nodes[nid].revert()
@@ -1121,7 +1102,7 @@ class HDACodec:
 
   def export(self, exporter):
     self.exporter = exporter
-    if not self.gpio is None:
+    if self.gpio is not None:
       self.gpio.export()
     for nid in self.nodes:
       self.nodes[nid].export()
@@ -1140,7 +1121,7 @@ class HDACodec:
       self.proc_codec = HDACodecProc(self.card, self.device, file)
     else:
       self.proc_codec = None
-      print("Unable to find proc file '%s'" % file)
+      print(f"Unable to find proc file '{file}'")
 
   def analyze(self):
     self.afg = None

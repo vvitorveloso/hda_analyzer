@@ -52,7 +52,7 @@ def do_diff1(codec, diff1):
   from difflib import unified_diff
   diff = unified_diff(diff1.split('\n'), codec.dump().split('\n'), n=8, lineterm='')
   diff = '\n'.join(list(diff))
-  if len(diff) > 0:
+  if diff != "":
     diff = 'Diff for codec %i/%i (%s):\n' % (codec.card, codec.device, codec.name) + diff
   return diff
 
@@ -67,7 +67,7 @@ def do_diff():
       diff += do_diff1(c, DIFF_TREE[card][codec])
   if len(diff) > 0:
     open(DIFF_FILE, "w+").write(diff + '\n')
-    print("Diff was stored to: %s" % DIFF_FILE)
+    print(f"Diff was stored to: {DIFF_FILE}")
   return (diff and hw > 0) and True or False
 
 class NodeGui(Gtk.ScrolledWindow):
@@ -131,8 +131,7 @@ class NodeGui(Gtk.ScrolledWindow):
     _, x, y, _ = rootwin.get_pointer()
 
     pos_x = x - popup_width/2
-    if pos_x < 0:
-      pos_x = 0
+    pos_x = max(pos_x, 0)
     if pos_x + popup_width > screen_width:
       pos_x = screen_width - popup_width
     pos_y = y + 16
@@ -185,7 +184,7 @@ class NodeGui(Gtk.ScrolledWindow):
     text_view.set_border_width(4)
     fontName = get_fixed_font()
     text_view.modify_font(fontName)
-    if not text is None:
+    if text is not None:
       buffer = Gtk.TextBuffer()
       iter = buffer.get_iter_at_offset(0)
       if text[-1] == '\n':
@@ -201,9 +200,7 @@ class NodeGui(Gtk.ScrolledWindow):
     frame.set_border_width(4)
     if len(node.wcaps_list) == 0:
       return frame
-    s = ''
-    for i in node.wcaps_list:
-      s += node.wcap_name(i) + '\n'
+    s = ''.join(node.wcap_name(i) + '\n' for i in node.wcaps_list)
     frame.add(self.__new_text_view(text=s))
     return frame
 
@@ -214,10 +211,8 @@ class NodeGui(Gtk.ScrolledWindow):
         HDA_SIGNAL.emit("hda-node-changed", self, node)
     for r in model:
       r[0] = False
-    idx = 0
-    for r in model:
+    for idx, r in enumerate(model):
       r[0] = node.active_connection == idx
-      idx += 1
 
   def __build_connection_list(self, node):
     frame = Gtk.Frame.new('Connection List')
@@ -231,13 +226,11 @@ class NodeGui(Gtk.ScrolledWindow):
         GObject.TYPE_BOOLEAN,
         GObject.TYPE_STRING
       )
-      idx = 0
-      for i in node.connections:
+      for idx, i in enumerate(node.connections):
         iter = model.append()
         node1 = node.codec.get_node(node.connections[idx])
         model.set(iter, 0, node.active_connection == idx,
                         1, node1.name())
-        idx += 1
       self.connection_model = model
       treeview = Gtk.TreeView(model)
       treeview.set_rules_hint(True)
@@ -245,7 +238,7 @@ class NodeGui(Gtk.ScrolledWindow):
       treeview.set_size_request(300, 30 + len(node.connections) * 25)
       renderer = Gtk.CellRendererToggle()
       renderer.set_radio(True)
-      if not node.active_connection is None:
+      if node.active_connection is not None:
         renderer.connect("toggled", self.__node_connection_toggled, (model, node))
       column = Gtk.TreeViewColumn("Active", renderer, active=0)
       treeview.append_column(column)
@@ -414,9 +407,7 @@ class NodeGui(Gtk.ScrolledWindow):
       if node.pincap or node.pincap_vref:
         frame = Gtk.Frame.new('PIN Caps')
         frame.set_border_width(4)
-        s = ''
-        for i in node.pincap:
-          s += node.pincap_name(i) + '\n'
+        s = ''.join(node.pincap_name(i) + '\n' for i in node.pincap)
         for i in node.pincap_vref:
           s += 'VREF_%s\n' % i
         frame.add(self.__new_text_view(text=s))
@@ -449,7 +440,7 @@ class NodeGui(Gtk.ScrolledWindow):
       s += 'No presence\n'
     frame.add(self.__new_text_view(text=s))
     vbox.pack_start(frame, True, True, 0)
-    
+
     frame = Gtk.Frame.new('Widget Control')
     frame.set_border_width(4)
     vbox1 = Gtk.VBox(False, 0)
@@ -478,8 +469,7 @@ class NodeGui(Gtk.ScrolledWindow):
     return hbox
 
   def __build_mix(self, node):
-    hbox = Gtk.HBox(False, 0)
-    return hbox
+    return Gtk.HBox(False, 0)
 
   def __sdi_select_changed(self, adj, node):
     val = int(adj.get_value())
@@ -502,7 +492,7 @@ class NodeGui(Gtk.ScrolledWindow):
       try:
         val = int(val)
       except:
-        print("Unknown category value '%s'" % val)
+        print(f"Unknown category value '{val}'")
         return
     if node.dig1_set_value('category', val):
       HDA_SIGNAL.emit("hda-node-changed", self, node)
@@ -530,7 +520,7 @@ class NodeGui(Gtk.ScrolledWindow):
     frame.add(self.__new_text_view(text=s))
     vbox.pack_start(frame, True, True, 0)
 
-    if not node.sdi_select is None:
+    if node.sdi_select is not None:
       hbox1 = Gtk.HBox(False, 0)
       frame = Gtk.Frame.new()
       adj = Gtk.Adjustment(node.sdi_select, 0.0, 16.0, 1.0, 1.0, 1.0)
@@ -572,8 +562,7 @@ class NodeGui(Gtk.ScrolledWindow):
     frame = Gtk.Frame.new('Device')
     frame.set_border_width(4)
     hbox = Gtk.HBox(False, 0)
-    s = 'name=' + str(device.name) + ', type=' + \
-        str(device.type) + ', device=' + str(device.device)
+    s = f'name={str(device.name)}, type={str(device.type)}, device={str(device.device)}'
     label = Gtk.Label(label=s)
     hbox.pack_start(label, False, False, 0)
     frame.add(hbox)
@@ -588,16 +577,15 @@ class NodeGui(Gtk.ScrolledWindow):
     for ctrl in ctrls:
       hbox1 = Gtk.HBox(False, 0)
       vbox1.pack_start(hbox1, False, False, 0)
-      s = (ctrl.iface and ('iface=' + ctrl.iface + ',') or '') + \
-          'name=' + str(ctrl.name) + ', index=' + str(ctrl.index) + \
-          ', device=' + str(ctrl.device)
+      s = ((((ctrl.iface and f'iface={ctrl.iface},' or '') + 'name=') +
+            str(ctrl.name) + ', index=') + str(ctrl.index) + ', device=') + str(
+                ctrl.device)
       label = Gtk.Label(label=s)
       hbox1.pack_start(label, False, False, 0)
       if ctrl.amp_chs:
         hbox1 = Gtk.HBox(False, 0)
         vbox1.pack_start(hbox1, False, False, 0)
-        s = '  chs=' + str(ctrl.amp_chs) + ', dir=' + str(ctrl.amp_dir) + \
-            ', idx=' + str(ctrl.amp_idx) + ', ofs=' + str(ctrl.amp_ofs)
+        s = f'  chs={str(ctrl.amp_chs)}, dir={str(ctrl.amp_dir)}, idx={str(ctrl.amp_idx)}, ofs={str(ctrl.amp_ofs)}'
         label = Gtk.Label(label=s)
         hbox1.pack_start(label, False, False, 0)
     frame.add(vbox1)
@@ -614,14 +602,12 @@ class NodeGui(Gtk.ScrolledWindow):
   def __read_all_node(self):
     node = self.node
     if node.wtype_id in ['AUD_IN', 'AUD_OUT']:
-      if not node.sdi_select is None:
+      if node.sdi_select is not None:
         self.sdi_select_adj.set_value(node.sdi_select)
       if node.digital:
-        idx = 0
-        for name in DIG1_BITS:
+        for idx, name in enumerate(DIG1_BITS):
           checkbutton = self.digital_checkbuttons[idx]
           checkbutton.set_active(node.digi1 & (1 << DIG1_BITS[name]))
-          idx += 1
         self.dig_category_entry.set_text("0x%x" % node.dig1_category)
     elif node.wtype_id == 'PIN':
       if 'EAPD' in node.pincap:
@@ -649,20 +635,16 @@ class NodeGui(Gtk.ScrolledWindow):
     for dir, caps, vals in a:
       for idx in range(len(vals.vals)):
         val = vals.vals[idx]
-        checkbutton = self.amp_checkbuttons[dir][idx]
-        if checkbutton:
+        if checkbutton := self.amp_checkbuttons[dir][idx]:
           checkbutton.set_active(val & 0x80 and True or False)
-        adj = self.amp_adjs[dir][idx]
-        if adj:
+        if adj := self.amp_adjs[dir][idx]:
           adj.set_value((val & 0x7f) % (caps.nsteps+1))
         idx += 1
     if hasattr(self, 'connection_model'):
       for r in self.connection_model:
         r[0] = False
-      idx = 0
-      for r in self.connection_model:
+      for idx, r in enumerate(self.connection_model):
         r[0] = node.active_connection == idx
-        idx += 1
 
   def __build_node(self, node, doframe=False):
     self.node = node
@@ -675,10 +657,9 @@ class NodeGui(Gtk.ScrolledWindow):
 
     vbox = Gtk.VBox(False, 0)
     dev = node.get_device()
-    if not dev is None:
+    if dev is not None:
       vbox.pack_start(self.__build_device(dev), False, False,0)
-    ctrls = node.get_controls()
-    if ctrls:
+    if ctrls := node.get_controls():
       node.get_mixercontrols()	# workaround
       vbox.pack_start(self.__build_controls(ctrls), False, False,0)
     hbox = Gtk.HBox(False, 0)
@@ -691,9 +672,8 @@ class NodeGui(Gtk.ScrolledWindow):
       vbox.pack_start(self.__build_pin(node), False, False,0)
     elif node.wtype_id in ['AUD_IN', 'AUD_OUT']:
       vbox.pack_start(self.__build_aud(node), False, False,0)
-    else:
-      if not node.wtype_id in ['AUD_MIX', 'BEEP', 'AUD_SEL']:
-        print('Node type %s has no GUI support' % node.wtype_id)
+    elif node.wtype_id not in ['AUD_MIX', 'BEEP', 'AUD_SEL']:
+      print(f'Node type {node.wtype_id} has no GUI support')
     if node.proc_wid:
       vbox.pack_start(self.__build_proc(node), False, False,0)
 
@@ -771,7 +751,7 @@ class NodeGui(Gtk.ScrolledWindow):
     frame.add(hbox)
     self.gpio_checkbuttons = []
     for id in GPIO_IDS:
-      id1 = id == 'direction' and 'out-dir' or id
+      id1 = 'out-dir' if id == 'direction' else id
       frame1 = Gtk.Frame.new(id1)
       frame1.set_border_width(4)
       vbox1 = Gtk.VBox(False, 0)
@@ -786,11 +766,9 @@ class NodeGui(Gtk.ScrolledWindow):
     return frame
 
   def __read_all_codec(self):
-    idx = 0
-    for id in GPIO_IDS:
+    for idx, id in enumerate(GPIO_IDS):
       for i in range(self.codec.gpio_max):
         self.gpio_checkbuttons[idx][i].set_active(self.codec.gpio.test(id, i))
-      idx += 1
 
   def __build_codec(self, codec, doframe=False):
     self.codec = codec
@@ -855,7 +833,7 @@ class TrackWindows:
     self.windows = []
     
   def add(self, win):
-    if not win in self.windows:
+    if win not in self.windows:
       self.windows.append(win)
     
   def close(self, win):

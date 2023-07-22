@@ -104,22 +104,19 @@ class Node:
 
   def in_area(self, x, y):
     if x >= self.myarea[0] and \
-       y >= self.myarea[1] and \
-       x < self.myarea[0] + self.myarea[2] and \
-       y < self.myarea[1] + self.myarea[3]:
+         y >= self.myarea[1] and \
+         x < self.myarea[0] + self.myarea[2] and \
+         y < self.myarea[1] + self.myarea[3]:
       wherex = x - self.myarea[0]
       wherey = y - self.myarea[1]
       if wherey >= (self.myarea[3]/4) * 3:
-        if wherex >= self.myarea[2]/2:
-          return "dst"
-        else:
-          return "src"
+        return "dst" if wherex >= self.myarea[2]/2 else "src"
       else:
         return "body"
 
   def mouse_move(self, x, y, graph):
     what = self.in_area(x, y)
-    if not what is None:
+    if what is not None:
       if what == "dst":
         for r in self.dst_routes:
           r.highlight = True
@@ -156,29 +153,19 @@ class Route:
   def statusdesc(self):
 
     def niceprint(prefix, val):
-      if val is None:
-        return prefix
-      return ' ' + prefix + ' ' + val
+      return prefix if val is None else f' {prefix} {val}'
 
     src = self.src.node
     dst = self.dst.node
     vals = src.get_conn_amp_vals_str(dst)
     src = "%s 0x%02x" % (src.wtype_id.replace('_', '-'), src.nid)
     dst = "%s 0x%02x" % (dst.wtype_id.replace('_', '-'), dst.nid)
-    res = niceprint("SRC " + src, vals[0]) + ' -> ' + \
-          niceprint("DST " + dst, vals[1])
+    res = f'{niceprint(f"SRC {src}", vals[0])} -> {niceprint(f"DST {dst}", vals[1])}'
     return res
 
   def expose(self, cr, event):
     width = self.src.myarea[2]
     height = self.src.myarea[3]
-
-    if 0: # direct green lines
-      cr.set_line_width(0.3)
-      cr.set_source_rgb(0.2, 1.0, 0.2)
-      cr.move_to(self.src.myarea[0]+(width/4)*3, self.src.myarea[1]+height)
-      cr.line_to(self.dst.myarea[0]+width/4, self.dst.myarea[1]+height)
-      cr.stroke()
 
     for line in self.lines:
       if self.marked:
@@ -233,10 +220,7 @@ class Route:
       if posx == line[0] and posy == line[1]:
         #print("Clash5", posx, posy, line)
         return True
-      if posx == line[2] and posy == line[3]:
-        #print("Clash6", posx, posy, line)
-        return True
-      return False 
+      return posx == line[2] and posy == line[3]
 
     for p in possible:
       found = False
@@ -245,9 +229,9 @@ class Route:
           break
         for line in route.lines:
           if check_dot(line[0], line[1], p) or \
-             check_dot(line[2], line[3], p) or \
-             check_dot(p[0], p[1], line) or \
-             check_dot(p[2], p[3], line):
+               check_dot(line[2], line[3], p) or \
+               check_dot(p[0], p[1], line) or \
+               check_dot(p[2], p[3], line):
             #print("Found1", p)
             found = True
             break
@@ -271,15 +255,14 @@ class Route:
     posx, posy, width, height = self.src.myarea
     dposx, dposy, dwidth, dheight = self.dst.myarea
     extra = self.src.extra
-    
-    possible = []
+
     startx = posx >= dposx and posx - extra or posx + width
     xrange = list(range(5, extra-1, 5))
     if posx >= dposx:
       xrange.reverse()
       a = list(range(width+extra+5, width+extra*2-1, 5))
       a.reverse()
-      xrange = xrange + a
+      xrange += a
       for i in range(2, 10):
         a = list(range(width*i+extra*i+5, width*i+extra*(i+1)-1, 5))
         a.reverse()
@@ -288,14 +271,12 @@ class Route:
       xrange += range(width+extra+5, width+extra*2-1, 5)
       for i in range(2, 10):
         xrange += range(width*i+extra*i+5, width*i+extra*(i+1)-1, 5)
-    for j in xrange:
-      possible.append([startx + j, posy + height + 5,
-                       startx + j, dposy + height + 5])
-    sel = self.select_line(routes, None, possible)
-    if not sel:
+    possible = [[startx + j, posy + height + 5, startx + j, dposy + height + 5]
+                for j in xrange]
+    if sel := self.select_line(routes, None, possible):
+      self.lines.append(sel)
+    else:
       raise ValueError("unable to route")
-
-    self.lines.append(sel)
 
   def finish(self, routes, nodes):
 
@@ -311,8 +292,7 @@ class Route:
     x = posx+(width/2)
     y = posy+height
     for tryit in range(3):
-      possible = []
-      fixup = sel[0] > posx and -1 or 1
+      fixup = -1 if sel[0] > posx else 1
       r = range(tryit*extra, (tryit+1)*extra-5-1, 5)
       if tryit == 2:
         r = range(-height-extra+5, -height-5, 5)
@@ -325,17 +305,14 @@ class Route:
         sub -= 5
       else:
         sub = 0
-      for i in range(tryit*extra, (tryit+1)*extra-5-1, 5):
-        possible.append([x1, sel[1]+i, x2, sel[1]+i])
-      sel1 = self.select_line(routes, nodes, possible)
-      if sel1:
+      possible = [[x1, sel[1] + i, x2, sel[1] + i]
+                  for i in range(tryit * extra, (tryit + 1) * extra - 5 - 1, 5)]
+      if sel1 := self.select_line(routes, nodes, possible):
         sel1[0] -= fixup + sub
         sel1[2] += fixup
-        possible = []
-        for j in range(0, width//2-10, 5):
-          possible.append([sel1[0]+j, y, sel1[0]+j, sel1[1]])
-        sel2 = self.select_line(routes, nodes, possible)
-        if sel2:
+        possible = [[sel1[0] + j, y, sel1[0] + j, sel1[1]]
+                    for j in range(0, width // 2 - 10, 5)]
+        if sel2 := self.select_line(routes, nodes, possible):
           sel1[0] = sel2[0]
           self.lines[0][1] = sel1[1]
           self.lines.append(sel1)
@@ -350,8 +327,7 @@ class Route:
     x = dposx
     y = dposy+height
     for tryit in range(3):
-      possible = []
-      fixup = sel[2] > posx and -1 or 1
+      fixup = -1 if sel[2] > posx else 1
       r = range(tryit * extra, (tryit+1)*extra-5-1, 5)
       if tryit == 2:
         r = range(-height-extra+5, -height-5, 5)
@@ -364,17 +340,13 @@ class Route:
         sub = 0
       else:
         sub -= 5
-      for i in r:
-        possible.append([x1, sel[3]+i, x2, sel[3]+i])
-      sel1 = self.select_line(routes, nodes, possible)
-      if sel1:
+      possible = [[x1, sel[3]+i, x2, sel[3]+i] for i in r]
+      if sel1 := self.select_line(routes, nodes, possible):
         sel1[0] -= fixup + sub
         sel1[2] += fixup
-        possible = []
-        for j in range(0, width//2-10, 5):
-          possible.append([sel1[0]+j, y, sel1[0]+j, sel1[1]])
-        sel2 = self.select_line(routes, nodes, possible)
-        if sel2:
+        possible = [[sel1[0] + j, y, sel1[0] + j, sel1[1]]
+                    for j in range(0, width // 2 - 10, 5)]
+        if sel2 := self.select_line(routes, nodes, possible):
           sel1[0] = sel2[0]
           self.lines[0][3] = sel1[3]
           self.lines.append(sel1)
@@ -385,14 +357,11 @@ class Route:
       self.wronglines.append([x+5, y, sel[2], sel[3]])
       print("[2] displaced route 0x%x->0x%x %s %s" % (self.src.node.nid, self.dst.node.nid, repr(self.lines[-1]), repr(sel)))
       res = False
-      
+
     return res
 
   def has_x(self, x):
-    for line in self.lines:
-      if line[0] == x or line[2] == x:
-        return True
-    return False
+    return any(line[0] == x or line[2] == x for line in self.lines)
     
   def compressx(self, first, size):
     idx = 0
@@ -407,10 +376,7 @@ class Route:
       idx += 1
 
   def has_y(self, y):
-    for line in self.lines:
-      if line[1] == y or line[3] == y:
-        return True
-    return False
+    return any(line[1] == y or line[3] == y for line in self.lines)
     
   def compressy(self, first, size):
     idx = 0
@@ -448,7 +414,7 @@ class CodecGraphLayout(Gtk.Layout):
     self.set_events(0)
     self.set_hadjustment(adj1)
     self.set_vadjustment(adj2) 
-    
+
     self.add_events(Gdk.EventMask.EXPOSURE_MASK | Gdk.EventMask.POINTER_MOTION_MASK |
                     Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK |
                     Gdk.EventMask.LEAVE_NOTIFY_MASK | Gdk.EventMask.SCROLL_MASK)
@@ -471,11 +437,7 @@ class CodecGraphLayout(Gtk.Layout):
 
     self.changed_handler = HDA_SIGNAL.connect("hda-node-changed", self.hda_node_changed)
 
-    ok = False
-    for extra in [150, 200, 300]:
-      if self.build(extra):
-        ok = True
-        break
+    ok = any(self.build(extra) for extra in [150, 200, 300])
     if not ok:
       print("Not all routes are placed correctly!!!")
 
@@ -498,7 +460,7 @@ class CodecGraphLayout(Gtk.Layout):
       for y in range(len(self.graph)):
         for x in range(len(self.graph[0])):
           nid = self.graph[y][x]
-          if not nid is None:
+          if nid is not None:
             node = self.codec.nodes[nid]
             w = Node(self.codec, node, x, y, nodesize, extra)
             self.nodes.append(w)
@@ -539,17 +501,17 @@ class CodecGraphLayout(Gtk.Layout):
       return
     # final step - optimize drawings
     while 1:
-      size = self.compressx(sx)
-      if not size:
+      if size := self.compressx(sx):
+        sx -= size
+      else:
         break
-      sx -= size
     position += 1
     self.pdialog.set_fraction(float(position) / total)
     while 1:
-      size = self.compressy(sy)
-      if not size:
+      if size := self.compressy(sy):
+        sy -= size
+      else:
         break
-      sy -= size
     self.set_size(sx, sy)
     return res
 
@@ -586,11 +548,7 @@ class CodecGraphLayout(Gtk.Layout):
   def compressx(self, sx):
     first = None
     for a in range(15, sx, 5):
-      found = False
-      for node in self.nodes:
-        if node.has_x(a):
-          found = True
-          break
+      found = any(node.has_x(a) for node in self.nodes)
       if not found:
         for route in self.routes:
           if route.has_x(a):
@@ -612,11 +570,7 @@ class CodecGraphLayout(Gtk.Layout):
   def compressy(self, sy):
     first = None
     for a in range(15, sy, 5):
-      found = False
-      for node in self.nodes:
-        if node.has_y(a):
-          found = True
-          break
+      found = any(node.has_y(a) for node in self.nodes)
       if not found:
         for route in self.routes:
           if route.has_y(a):
@@ -642,7 +596,7 @@ class CodecGraphLayout(Gtk.Layout):
   def find_node(self, event):
     for node in self.nodes:
       what = node.in_area(event.x, event.y)
-      if not what is None:
+      if what is not None:
         return (node, what)
     return (None, None)
     
@@ -704,10 +658,9 @@ class CodecGraphLayout(Gtk.Layout):
     if self.popup:
       if oldpopup != self.popup:
         self.show_popup(event)
-    else:
-      if self.popup_win:
-        self.popup_win.destroy()
-        self.popup_win = None
+    elif self.popup_win:
+      self.popup_win.destroy()
+      self.popup_win = None
 
   def mouse_leave(self, widget, data=None):
     for route in self.routes:
@@ -724,19 +677,17 @@ class CodecGraphLayout(Gtk.Layout):
         if not self.startnode:
           self.startnode = node
           self.queue_draw()
-      else:
-        if self.startnode:
-          self.startnode = None
-          self.queue_draw()
+      elif self.startnode:
+        self.startnode = None
+        self.queue_draw()
     elif what == "end":
       if enable:
         if not self.endnode:
           self.endnode = node
           self.queue_draw()
-      else:
-        if self.endnode:
-          self.endnode = None
-          self.queue_draw()
+      elif self.endnode:
+        self.endnode = None
+        self.queue_draw()
 
   def mark_route(self, widget, route, what, enable):
     if what == "mark":
@@ -744,10 +695,9 @@ class CodecGraphLayout(Gtk.Layout):
         if not route.marked:
           route.marked = enable
           self.queue_draw()
-      else:
-        if route.marked:
-          route.marked = False
-          self.queue_draw()
+      elif route.marked:
+        route.marked = False
+        self.queue_draw()
 
   def node_win_destroy(self, widget, node):
     TRACKER.close(node.win)
@@ -760,7 +710,7 @@ class CodecGraphLayout(Gtk.Layout):
       win = Gtk.Window()
       win.set_default_size(500, 600)
       gui = NodeGui(node=node.node)
-      win.set_title(self.mytitle + ' ' + gui.mytitle)
+      win.set_title(f'{self.mytitle} {gui.mytitle}')
       win.add(gui)
       win.connect("destroy", self.node_win_destroy, node)
       win.show_all()
